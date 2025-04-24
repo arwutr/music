@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>🎵ค้นหาเพลง By ARM🎵</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; padding: 50px; }
+    input { padding: 10px; width: 300px; font-size: 16px; }
+    button { padding: 10px 20px; font-size: 16px; }
+    iframe { margin-top: 20px; width: 560px; height: 315px; }
+  </style>
+</head>
+<body>
+  <h1>🎧ฟังเพลง🎧 </h1>
+  <input type="text" id="searchInput" placeholder="พิมพ์ชื่อเพลงที่นี่..." />
+  <button onclick="search()">ค้นหา</button>
+
+  <div id="result"></div>
+
+  <script>
+    const API_KEY = 'AIzaSyB5ho_NRgYf8yZZgBGqP6LrEB4N2NsV85g'; // ← วาง API Key ที่นี่ค่ะ
+
+    async function search() {
+      const query = document.getElementById('searchInput').value;
+      const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&q=${encodeURIComponent(query)}&key=${API_KEY}&maxResults=1`;
+
+      const res = await fetch(url);
+      const data = await res.json();
+
+      if (data.items.length > 0) {
+        const videoId = data.items[0].id.videoId;
+        const embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=0`; // 🧠 autoplay + mute
+        document.getElementById('result').innerHTML = `
+          <iframe src="${embedUrl}" frameborder="0"
+                  allow="autoplay; encrypted-media" allowfullscreen></iframe>
+        `;
+      } else {
+        document.getElementById('result').innerHTML = '<p>ไม่พบวิดีโอค่ะ 😢</p>';
+      }
+    }
+  </script>
+</body>
+</html>
