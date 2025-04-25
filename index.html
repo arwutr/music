@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <title>ค้นหาเพลง Mini YouTube By Arwut</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; padding: 40px; background: #f0f0f0; }
+    input, button { padding: 10px; font-size: 16px; margin: 5px; }
+    iframe { margin-top: 20px; width: 100%; max-width: 560px; height: 315px; border: none; }
+    .history, .playlist { margin-top: 30px; max-width: 600px; margin-left: auto; margin-right: auto; text-align: left; }
+    .history-item, .playlist-item { margin-bottom: 5px; cursor: pointer; color: blue; text-decoration: underline; }
+    .tag { font-size: 13px; color: #555; background: #e0e0e0; padding: 3px 7px; border-radius: 5px; margin-left: 5px; }
+    .btn-clear { background: red; color: white; }
+  </style>
+</head>
+<body>
+
+  <h1>🎵 ค้นหาเพลง🎵 </h1>
+  <input id="searchInput" type="text" placeholder="พิมพ์ชื่อเพลง หรือศิลปิน..." />
+  <button onclick="search()">ค้นหา</button>
+  <button onclick="showHistory()">ดูประวัติ</button>
+  <button onclick="clearHistory()" class="btn-clear">ลบประวัติทั้งหมด</button>
+  <button onclick="playPlaylist()">🎵 เล่น Playlist ต่อเนื่อง</button>
+  <hr>
+  <button onclick="adminLogin()">👨‍⚖️ เข้าสู่ระบบผู้ดูแล</button>
+  <div id="adminPanel" style="display:none; margin-top:20px;">
+    <h3>🛠️ เปลี่ยน API Key (Admin)</h3>
+    <input id="newApiKey" placeholder="วาง API Key ใหม่ที่นี่..." style="width:80%;" />
+    <button onclick="saveApiKey()">📂 บันทึก</button>
+  </div>
+
+  <div id="result"></div>
+  <div class="history" id="history"></div>
+
+  <script>
+    let API_KEY = 'AIzaSyB5ho_NRgYf8yZZgBGqP6LrEB4N2NsV85g';
+    let savedKey = localStorage.getItem('admin_api_key');
+    if (savedKey) {
+      API_KEY = savedKey;
+    }
+    let cache = JSON.parse(localStorage.getItem('yt_cache') || '{}');
+    let playerQueue = [];
+    let currentIndex = 0;
+    let player;
+
+    const tag = document.createElement('script');
+    tag.src = "https://www.youtube.com/iframe_api";
+    document.body.appendChild(tag);
+
+    function onYouTubeIframeAPIReady() {
+      player = new YT.Player('result', {
+        height: '315',
+        width: '560',
+        videoId: '',
+        events: { 'onStateChange': onPlayerStateChange },
+        playerVars: { autoplay: 1, mute: 1 }
+      });
+    }
+
+    function onPlayerStateChange(event) {
+      if (event.data === YT.PlayerState.ENDED && playerQueue.length > 0) {
+        currentIndex++;
+        if (currentIndex < playerQueue.length) {
+          player.loadVideoById(playerQueue[currentIndex]);
+        }
+      }
+    }
+
+    async function search() {
+      const query = document.getElementById('searchInput').value.trim().toLowerCase();
+      if (!query) return;
+      if (cache[query]) {
+        playVideo(cache[query].videoId, cache[query].title);
+        return;
+      }
+      const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=1&q=${encodeURIComponent(query)}&key=${API_KEY}`;
+      try {
+        const res = await fetch(url);
+        const data = await res.json();
+        if (data.items && data.items.length > 0) {
+          const videoId = data.items[0].id.videoId;
+          const title = data.items[0].snippet.title;
+          cache[query] = { videoId, title };
+          localStorage.setItem('yt_cache', JSON.stringify(cache));
+          playVideo(videoId, title);
+        } else {
+          document.getElementById('result').innerHTML = `<p>ไม่พบวิดีโอค่ะ 😢</p>`;
+        }
+      } catch (e) {
+        document.getElementById('result').innerHTML = `<p>เกิดข้อผิดพลาด: ${e.message}</p>`;
+      }
+    }
+
+    function playVideo(videoId, title) {
+      document.getElementById('result').innerHTML = `<h2>${title}</h2>`;
+      player.loadVideoById(videoId);
+    }
+
+    function showHistory() {
+      const historyDiv = document.getElementById('history');
+      historyDiv.innerHTML = `<h3>📜 ประวัติการค้นหา</h3>`;
+      const categories = {};
+      for (const query in cache) {
+        const genre = detectGenre(query);
+        if (!categories[genre]) categories[genre] = [];
+        categories[genre].push({ query, ...cache[query] });
+      }
+      for (const genre in categories) {
+        historyDiv.innerHTML += `<h4>${genre}</h4>`;
+        categories[genre].forEach(item => {
+          historyDiv.innerHTML += `
+            <div class="history-item" onclick="playVideo('${item.videoId}', '${item.title.replace(/'/g, "\\'")}')">
+              🎵 ${item.title} <span class="tag">${item.query}</span>
+            </div>
+          `;
+        });
+      }
+    }
+
+    function detectGenre(query) {
+      if (query.includes('lofi') || query.includes('chill')) return '🛌 Lofi/Chill';
+      if (query.includes('rock')) return '🎸 Rock';
+      if (query.includes('cover')) return '🎤 Cover';
+      if (query.includes('remix')) return '🎛️ Remix';
+      if (query.includes('rap') || query.includes('hiphop')) return '🎧 Rap/Hip-Hop';
+      return '📂 อื่น ๆ';
+    }
+
+    function clearHistory() {
+      if (confirm("คุณแน่ใจหรือไม่ว่าต้องการลบประวัติทั้งหมด?")) {
+        localStorage.removeItem('yt_cache');
+        cache = {};
+        document.getElementById('history').innerHTML = '';
+        alert("ลบประวัติเรียบร้อยค่ะ 🧹");
+      }
+    }
+
+    function playPlaylist() {
+      playerQueue = Object.values(cache).map(item => item.videoId);
+      currentIndex = 0;
+      if (playerQueue.length > 0) {
+        const firstTitle = Object.values(cache)[0].title;
+        document.getElementById('result').innerHTML = `<h2>${firstTitle}</h2>`;
+        player.loadVideoById(playerQueue[0]);
+      }
+    }
+
+    function adminLogin() {
+      const pass = prompt("กรอกรหัสผู้ดูแล:");
+      if (pass === 'nimda') {
+        document.getElementById('adminPanel').style.display = 'block';
+      } else {
+        alert('รหัสไม่ถูกต้องค่ะ ❌');
+      }
+    }
+
+    function saveApiKey() {
+      const newKey = document.getElementById('newApiKey').value.trim();
+      if (!newKey) return alert("กรุณากรอก API Key ค่ะ");
+      localStorage.setItem('admin_api_key', newKey);
+      alert('✅ เปลี่ยน API Key เรียบร้อยแล้ว กรุณารีโหลดหน้าเว็บเพื่อใช้งาน');
+    }
+  </script>
+</body>
+</html>
