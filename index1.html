@@ -24,6 +24,10 @@
   <button onclick="playRandom()">🎲 สุ่มเพลง</button>
   <hr>
   <button onclick="adminLogin()">👨‍⚖️ เข้าสู่ระบบผู้ดูแล</button>
+  <button onclick="exportHistory()">📦 ส่งออกประวัติ</button>
+  <input type="file" id="importFile" style="display:none" onchange="importHistory(event)">
+  <button onclick="document.getElementById('importFile').click()">📂 นำเข้าประวัติ</button>
+
   <div id="adminPanel" style="display:none; margin-top:20px;">
     <h3>🛠️ เปลี่ยน API Key (Admin)</h3>
     <input id="newApiKey" placeholder="วาง API Key ใหม่ที่นี่..." style="width:80%;" />
@@ -33,132 +37,177 @@
   <div id="result"></div>
   <div class="history" id="history"></div>
 
-  <script>
-    let API_KEY = 'AIzaSyB5ho_NRgYf8yZZgBGqP6LrEB4N2NsV85g';
-    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyCtEzVSMKOtziCgFJgoQ9nzkbeiu7oL3uXIoy7RLOgsrY0sYP58Lpz-B0KsgPctokCCA/exec';
-    let savedKey = localStorage.getItem('admin_api_key');
-    if (savedKey) API_KEY = savedKey;
-    let cache = JSON.parse(localStorage.getItem('yt_cache') || '{}');
-    let playerQueue = [], currentIndex = 0, player;
+<script>
+  let API_KEY = 'AIzaSyB5ho_NRgYf8yZZgBGqP6LrEB4N2NsV85g';
+  const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyCtEzVSMKOtziCgFJgoQ9nzkbeiu7oL3uXIoy7RLOgsrY0sYP58Lpz-B0KsgPctokCCA/exec';
+  let savedKey = localStorage.getItem('admin_api_key');
+  if (savedKey) API_KEY = savedKey;
+  let cache = JSON.parse(localStorage.getItem('yt_cache') || '{}');
+  let playerQueue = [], currentIndex = 0, player;
 
-    const tag = document.createElement('script');
-    tag.src = "https://www.youtube.com/iframe_api";
-    document.body.appendChild(tag);
+  const tag = document.createElement('script');
+  tag.src = "https://www.youtube.com/iframe_api";
+  document.body.appendChild(tag);
 
-    function onYouTubeIframeAPIReady() {
-      player = new YT.Player('result', {
-        height: '315', width: '560', videoId: '',
-        events: { 'onStateChange': onPlayerStateChange },
-        playerVars: { autoplay: 1, mute: 1 }
-      });
-    }
+  function onYouTubeIframeAPIReady() {
+    player = new YT.Player('result', {
+      height: '315', width: '560', videoId: '',
+      events: { 'onStateChange': onPlayerStateChange },
+      playerVars: { autoplay: 1, mute: 1 }
+    });
+  }
 
-    function onPlayerStateChange(event) {
-      if (event.data === YT.PlayerState.ENDED && playerQueue.length > 0) {
-        currentIndex++;
-        if (currentIndex < playerQueue.length) {
-          player.loadVideoById(playerQueue[currentIndex]);
-        }
+  function onPlayerStateChange(event) {
+    if (event.data === YT.PlayerState.ENDED && playerQueue.length > 0) {
+      currentIndex++;
+      if (currentIndex < playerQueue.length) {
+        player.loadVideoById(playerQueue[currentIndex]);
       }
     }
+  }
 
-    async function search() {
-      const query = document.getElementById('searchInput').value.trim().toLowerCase();
-      if (!query) return;
-      if (cache[query]) {
-        playVideo(cache[query].videoId, cache[query].title);
-        sendToSheet(query, cache[query].videoId, cache[query].title);
-        return;
-      }
-      const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=1&q=${encodeURIComponent(query)}&key=${API_KEY}`;
-      try {
-        const res = await fetch(url);
-        const data = await res.json();
-        if (data.items && data.items.length > 0) {
-          const videoId = data.items[0].id.videoId;
-          const title = data.items[0].snippet.title;
-          cache[query] = { videoId, title };
-          localStorage.setItem('yt_cache', JSON.stringify(cache));
-          playVideo(videoId, title);
-          sendToSheet(query, videoId, title);
-        } else {
-          document.getElementById('result').innerHTML = `<p>ไม่พบวิดีโอค่ะ 😢</p>`;
-        }
-      } catch (e) {
-        document.getElementById('result').innerHTML = `<p>เกิดข้อผิดพลาด: ${e.message}</p>`;
-      }
+  async function search() {
+    const query = document.getElementById('searchInput').value.trim().toLowerCase();
+    if (!query) return;
+    if (cache[query]) {
+      playVideo(cache[query].videoId, cache[query].title);
+      sendToSheet(query, cache[query].videoId, cache[query].title);
+      return;
     }
-
-    function sendToSheet(query, videoId, title) {
-      fetch(SCRIPT_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, videoId, title })
-      });
-    }
-
-    function playVideo(videoId, title) {
-      document.getElementById('result').innerHTML = `<h2>${title}</h2>`;
-      player.loadVideoById(videoId);
-    }
-
-    function showHistory() {
-      const historyDiv = document.getElementById('history');
-      historyDiv.innerHTML = `<h3>📜 ประวัติการค้นหา</h3>`;
-      for (const query in cache) {
-        historyDiv.innerHTML += `
-          <div class="history-item" onclick="playVideo('${cache[query].videoId}', '${cache[query].title.replace(/'/g, "\\'")}')">
-            🎵 ${cache[query].title} <span class="tag">${query}</span>
-          </div>
-        `;
-      }
-    }
-
-    function clearHistory() {
-      if (confirm("คุณแน่ใจหรือไม่ว่าต้องการลบประวัติทั้งหมด?")) {
-        localStorage.removeItem('yt_cache');
-        cache = {};
-        document.getElementById('history').innerHTML = '';
-        alert("ลบประวัติเรียบร้อยค่ะ 🧹");
-      }
-    }
-
-    function playPlaylist() {
-      playerQueue = Object.values(cache).map(item => item.videoId);
-      currentIndex = 0;
-      if (playerQueue.length > 0) {
-        document.getElementById('result').innerHTML = `<h2>${Object.values(cache)[0].title}</h2>`;
-        player.loadVideoById(playerQueue[0]);
-      }
-    }
-
-    function playRandom() {
-      const songs = Object.values(cache);
-      if (songs.length === 0) {
-        alert('ยังไม่มีเพลงในประวัติให้สุ่มค่ะ 🎵');
-        return;
-      }
-      const randomIndex = Math.floor(Math.random() * songs.length);
-      const randomSong = songs[randomIndex];
-      document.getElementById('result').innerHTML = `<h2>${randomSong.title}</h2>`;
-      player.loadVideoById(randomSong.videoId);
-    }
-
-    function adminLogin() {
-      const pass = prompt("กรอกรหัสผู้ดูแล:");
-      if (pass === 'nimda') {
-        document.getElementById('adminPanel').style.display = 'block';
+    const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=1&q=${encodeURIComponent(query)}&key=${API_KEY}`;
+    try {
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.items && data.items.length > 0) {
+        const videoId = data.items[0].id.videoId;
+        const title = data.items[0].snippet.title;
+        cache[query] = { videoId, title };
+        localStorage.setItem('yt_cache', JSON.stringify(cache));
+        playVideo(videoId, title);
+        sendToSheet(query, videoId, title);
       } else {
-        alert('รหัสไม่ถูกต้องค่ะ ❌');
+        document.getElementById('result').innerHTML = `<p>ไม่พบวิดีโอค่ะ 😢</p>`;
       }
+    } catch (e) {
+      document.getElementById('result').innerHTML = `<p>เกิดข้อผิดพลาด: ${e.message}</p>`;
     }
+  }
 
-    function saveApiKey() {
-      const newKey = document.getElementById('newApiKey').value.trim();
-      if (!newKey) return alert("กรุณากรอก API Key ค่ะ");
-      localStorage.setItem('admin_api_key', newKey);
-      alert('✅ เปลี่ยน API Key เรียบร้อยแล้ว กรุณารีโหลดหน้าเว็บเพื่อใช้งาน');
+  function sendToSheet(query, videoId, title) {
+    fetch(SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, videoId, title })
+    });
+  }
+
+  function playVideo(videoId, title) {
+    document.getElementById('result').innerHTML = `<h2>${title}</h2>`;
+    player.loadVideoById(videoId);
+  }
+
+  function showHistory() {
+    const historyDiv = document.getElementById('history');
+    historyDiv.innerHTML = `<h3>📜 ประวัติการค้นหา</h3>`;
+    for (const query in cache) {
+      historyDiv.innerHTML += `
+        <div class="history-item" onclick="playVideo('${cache[query].videoId}', '${cache[query].title.replace(/'/g, "\\'")}')">
+          🎵 ${cache[query].title} <span class="tag">${query}</span>
+        </div>
+      `;
     }
-  </script>
+  }
+
+  function clearHistory() {
+    if (confirm("คุณแน่ใจหรือไม่ว่าต้องการลบประวัติทั้งหมด?")) {
+      localStorage.removeItem('yt_cache');
+      cache = {};
+      document.getElementById('history').innerHTML = '';
+      alert("ลบประวัติเรียบร้อยค่ะ 🧹");
+    }
+  }
+
+  function playPlaylist() {
+    playerQueue = Object.values(cache).map(item => item.videoId);
+    currentIndex = 0;
+    if (playerQueue.length > 0) {
+      document.getElementById('result').innerHTML = `<h2>${Object.values(cache)[0].title}</h2>`;
+      player.loadVideoById(playerQueue[0]);
+    }
+  }
+
+  function playRandom() {
+    const songs = Object.values(cache);
+    if (songs.length === 0) {
+      alert('ยังไม่มีเพลงในประวัติให้สุ่มค่ะ 🎵');
+      return;
+    }
+    const randomIndex = Math.floor(Math.random() * songs.length);
+    const randomSong = songs[randomIndex];
+    document.getElementById('result').innerHTML = `<h2>${randomSong.title}</h2>`;
+    player.loadVideoById(randomSong.videoId);
+  }
+
+  function adminLogin() {
+    const pass = prompt("กรอกรหัสผู้ดูแล:");
+    if (pass === 'nimda') {
+      document.getElementById('adminPanel').style.display = 'block';
+    } else {
+      alert('รหัสไม่ถูกต้องค่ะ ❌');
+    }
+  }
+
+  function saveApiKey() {
+    const newKey = document.getElementById('newApiKey').value.trim();
+    if (!newKey) return alert("กรุณากรอก API Key ค่ะ");
+    localStorage.setItem('admin_api_key', newKey);
+    alert('✅ เปลี่ยน API Key เรียบร้อยแล้ว กรุณารีโหลดหน้าเว็บเพื่อใช้งาน');
+  }
+
+  function exportHistory() {
+    const exportData = Object.entries(cache).map(([query, {videoId, title}]) => ({ query, videoId, title }));
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'history_backup.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function importHistory(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        const importedData = JSON.parse(e.target.result);
+        let newItems = 0, updatedItems = 0;
+        importedData.forEach(item => {
+          let isDuplicate = false;
+          for (const key in cache) {
+            if (cache[key].videoId === item.videoId) {
+              delete cache[key]; // ลบตัวเก่าออกถ้าวิดีโอซ้ำกัน
+              isDuplicate = true;
+            }
+          }
+          if (cache[item.query]) {
+            updatedItems++;
+          } else if (!isDuplicate) {
+            newItems++;
+          }
+          cache[item.query] = { videoId: item.videoId, title: item.title };
+        });
+        localStorage.setItem('yt_cache', JSON.stringify(cache));
+        alert(`📥 นำเข้าข้อมูลเรียบร้อยแล้วค่ะ! เพิ่มใหม่ ${newItems} รายการ, อัปเดต ${updatedItems} รายการ`);
+        showHistory();
+      } catch (err) {
+        alert('❌ ไฟล์ไม่ถูกต้องค่ะ');
+      }
+    };
+    reader.readAsText(file);
+  }
+</script>
+
 </body>
 </html>
