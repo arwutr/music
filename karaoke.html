@@ -49,19 +49,40 @@
     let ytPlayerReady = false;
 
     function searchKaraoke() {
+      const apiKeys = [
+        'AIzaSyB5ho_NRgYf8yZZgBGqP6LrEB4N2NsV85g',
+        'YOUR_SECOND_API_KEY_HERE',
+        'YOUR_THIRD_API_KEY_HERE'
+      ];
       const query = document.getElementById('search').value + ' คาราโอเกะ';
-      fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=3&q=${encodeURIComponent(query)}&key=AIzaSyB5ho_NRgYf8yZZgBGqP6LrEB4N2NsV85g`)
-        .then(res => res.json())
-        .then(data => {
-          const results = document.getElementById('results');
-          results.innerHTML = '';
-          data.items.forEach(item => {
-            const button = document.createElement('button');
-            button.textContent = item.snippet.title;
-            button.onclick = () => addToQueue(item);
-            results.appendChild(button);
+      let currentKeyIndex = 0;
+
+      function tryFetch() {
+        const key = apiKeys[currentKeyIndex];
+        fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=3&q=${encodeURIComponent(query)}&key=${key}`)
+          .then(res => {
+            if (!res.ok && currentKeyIndex < apiKeys.length - 1) {
+              currentKeyIndex++;
+              tryFetch();
+              return null;
+            } else {
+              return res.json();
+            }
+          })
+          .then(data => {
+            if (!data || !data.items) return;
+            const results = document.getElementById('results');
+            results.innerHTML = '';
+            data.items.forEach(item => {
+              const button = document.createElement('button');
+              button.textContent = item.snippet.title;
+              button.onclick = () => addToQueue(item);
+              results.appendChild(button);
+            });
           });
-        });
+      }
+
+      tryFetch();
     }
 
     function addToQueue(item) {
