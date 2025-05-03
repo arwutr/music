@@ -16,6 +16,11 @@
     @media screen and (max-width: 768px), screen and (fullscreen) {
       #sidebar { display: none; }
     }
+    #manual-add {
+      margin-top: 30px;
+      padding-top: 15px;
+      border-top: 1px solid #ccc;
+    }
   </style>
 </head>
 <body>
@@ -33,6 +38,12 @@
       <br><br>
       <button onclick="exportQueue()">ส่งออกคิวเป็น karaoke.csv</button>
       <input type="file" accept=".csv" onchange="importQueue(event)">
+
+      <div id="manual-add">
+        <h3>เพิ่มลิงก์ YouTube โดยตรง</h3>
+        <input id="manualUrl" placeholder="วางลิงก์ YouTube ที่นี่" style="width: 60%;">
+        <button onclick="addLinkToQueue()">เพิ่มเข้าคิว</button>
+      </div>
     </div>
     <div id="sidebar">
       <h2>คิวเพลง</h2>
@@ -93,6 +104,28 @@
         updateQueueDisplay();
         if (queue.length === 1) playNext();
       }
+    }
+
+    function addLinkToQueue() {
+      const apiKey = 'AIzaSyB5ho_NRgYf8yZZgBGqP6LrEB4N2NsV85g';
+      const url = document.getElementById('manualUrl').value.trim();
+      const match = url.match(/(?:youtube\.com.*[?&]v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+      if (!match) {
+        alert('ลิงก์ไม่ถูกต้อง');
+        return;
+      }
+      const videoId = match[1];
+      if (queue.find(q => q.videoId === videoId)) return;
+      fetch(`https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${videoId}&key=${apiKey}`)
+        .then(res => res.json())
+        .then(data => {
+          const title = data.items?.[0]?.snippet?.title || `YouTube Video: ${videoId}`;
+      if (!queue.find(q => q.videoId === videoId)) {
+        queue.push({ title, videoId });
+        updateQueueDisplay();
+        if (queue.length === 1) playNext();
+      }
+      document.getElementById('manualUrl').value = ''; });
     }
 
     function updateQueueDisplay() {
