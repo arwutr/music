@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -16,8 +17,13 @@
     @media screen and (max-width: 768px), screen and (fullscreen) {
       #sidebar { display: none; }
     }
-    #manual-add, #apikey-editor {
+    #manual-add {
       margin-top: 30px;
+      padding-top: 15px;
+      border-top: 1px solid #ccc;
+    }
+    #apikey-panel {
+      margin-top: 20px;
       padding-top: 15px;
       border-top: 1px solid #ccc;
     }
@@ -45,11 +51,11 @@
         <button onclick="addLinkToQueue()">เพิ่มเข้าคิว</button>
       </div>
 
-      <div id="apikey-editor">
-        <h3>จัดการ API Keys</h3>
-        <textarea id="apiKeyInput" rows="6" style="width: 100%;"></textarea><br>
-        <button onclick="saveApiKeys()">บันทึก API Keys</button>
-        <button onclick="exportApiKeys()">ส่งออก API Keys</button>
+      <div id="apikey-panel">
+        <h3>จัดการ API Key</h3>
+        <textarea id="apikeys" rows="5" style="width:100%;" placeholder="ใส่ API Key ทีละบรรทัด"></textarea>
+        <button onclick="saveApiKeys()">บันทึก API Key</button>
+        <button onclick="exportApiKeys()">ส่งออก API Key</button>
         <input type="file" accept=".txt" onchange="importApiKeys(event)">
       </div>
     </div>
@@ -64,26 +70,52 @@
   </footer>
 
   <script>
-    let queue = [];
+    let queue = JSON.parse(localStorage.getItem('queue') || '[]');
     let currentIndex = 0;
     let countdownInterval;
     let nowPlayingIndex = -1;
     let player;
     let ytPlayerReady = false;
 
+    const savedKeys = localStorage.getItem('apiKeys');
+    document.addEventListener("DOMContentLoaded", () => {
+      if (savedKeys) document.getElementById('apikeys').value = JSON.parse(savedKeys).join("\n");
+      updateQueueDisplay();
+    });
+
     function getApiKeys() {
-      const stored = localStorage.getItem('apiKeys');
-      if (stored) {
-        return stored.split('\n').map(k => k.trim()).filter(k => k);
-      }
-      return [];
+      return JSON.parse(localStorage.getItem('apiKeys') || '["AIzaSyB5ho_NRgYf8yZZgBGqP6LrEB4N2NsV85g"]');
+    }
+
+    function saveApiKeys() {
+      const keys = document.getElementById('apikeys').value.trim().split('\n').map(k => k.trim()).filter(k => k);
+      localStorage.setItem('apiKeys', JSON.stringify(keys));
+      alert('บันทึก API Key แล้วค่ะ');
+    }
+
+    function exportApiKeys() {
+      const blob = new Blob([document.getElementById('apikeys').value], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'api_keys.txt';
+      a.click();
+    }
+
+    function importApiKeys(event) {
+      const file = event.target.files[0];
+      const reader = new FileReader();
+      reader.onload = () => {
+        document.getElementById('apikeys').value = reader.result.trim();
+        saveApiKeys();
+      };
+      reader.readAsText(file);
     }
 
     function searchKaraoke() {
       const apiKeys = getApiKeys();
       const query = document.getElementById('search').value + ' คาราโอเกะ';
       let currentKeyIndex = 0;
-      if (apiKeys.length === 0) return alert('กรุณาใส่ API Key ก่อนใช้งาน');
 
       function tryFetch() {
         const key = apiKeys[currentKeyIndex];
@@ -109,7 +141,6 @@
             });
           });
       }
-
       tryFetch();
     }
 
@@ -118,6 +149,7 @@
       const title = item.snippet.title;
       if (!queue.find(q => q.videoId === videoId)) {
         queue.push({ title, videoId });
+        localStorage.setItem('queue', JSON.stringify(queue));
         updateQueueDisplay();
         if (queue.length === 1) playNext();
       }
@@ -125,21 +157,33 @@
 
     function addLinkToQueue() {
       const apiKeys = getApiKeys();
-      const apiKey = apiKeys[0];
       const url = document.getElementById('manualUrl').value.trim();
       const match = url.match(/(?:youtube\.com.*[?&]v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
       if (!match) return alert('ลิงก์ไม่ถูกต้อง');
       const videoId = match[1];
       if (queue.find(q => q.videoId === videoId)) return;
-      fetch(`https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${videoId}&key=${apiKey}`)
-        .then(res => res.json())
-        .then(data => {
-          const title = data.items?.[0]?.snippet?.title || `YouTube Video: ${videoId}`;
-          queue.push({ title, videoId });
-          updateQueueDisplay();
-          if (queue.length === 1) playNext();
-          document.getElementById('manualUrl').value = '';
-        });
+
+      let keyIndex = 0;
+      function tryFetchTitle() {
+        const key = apiKeys[keyIndex];
+        fetch(`https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${videoId}&key=${key}`)
+          .then(res => {
+            if (!res.ok && keyIndex < apiKeys.length - 1) {
+              keyIndex++;
+              tryFetchTitle();
+              return null;
+            } else return res.json();
+          })
+          .then(data => {
+            const title = data?.items?.[0]?.snippet?.title || `YouTube Video: ${videoId}`;
+            queue.push({ title, videoId });
+            localStorage.setItem('queue', JSON.stringify(queue));
+            updateQueueDisplay();
+            if (queue.length === 1) playNext();
+            document.getElementById('manualUrl').value = '';
+          });
+      }
+      tryFetchTitle();
     }
 
     function updateQueueDisplay() {
@@ -152,13 +196,16 @@
         titleSpan.className = 'playable-title';
         if (i === nowPlayingIndex) titleSpan.classList.add('now-playing');
         titleSpan.onclick = () => playSongAt(i);
+
         const removeBtn = document.createElement('button');
         removeBtn.textContent = 'ลบ';
         removeBtn.onclick = () => {
           queue.splice(i, 1);
           if (i < currentIndex) currentIndex--;
+          localStorage.setItem('queue', JSON.stringify(queue));
           updateQueueDisplay();
         };
+
         li.appendChild(titleSpan);
         li.appendChild(document.createTextNode(' '));
         li.appendChild(removeBtn);
@@ -170,9 +217,7 @@
       if (currentIndex >= queue.length) {
         if (document.getElementById('loopQueue').checked) {
           currentIndex = 0;
-        } else {
-          return;
-        }
+        } else return;
       }
       playSongAt(currentIndex);
       currentIndex++;
@@ -201,10 +246,7 @@
       }
     }
 
-    function onYouTubeIframeAPIReady() {
-      ytPlayerReady = true;
-    }
-
+    function onYouTubeIframeAPIReady() { ytPlayerReady = true; }
     function onPlayerStateChange(event) {
       if (event.data === YT.PlayerState.ENDED) playNext();
     }
@@ -212,7 +254,7 @@
     function updateRealCountdown() {
       clearInterval(countdownInterval);
       countdownInterval = setInterval(() => {
-        if (player && typeof player.getDuration === 'function') {
+        if (player && typeof player.getDuration === 'function' && typeof player.getCurrentTime === 'function') {
           const duration = player.getDuration();
           const current = player.getCurrentTime();
           const remaining = Math.max(0, Math.round(duration - current));
@@ -255,6 +297,7 @@
             queue.push({ title, videoId });
           }
         });
+        localStorage.setItem('queue', JSON.stringify(queue));
         currentIndex = 0;
         updateQueueDisplay();
         playNext();
@@ -262,42 +305,16 @@
       reader.readAsText(file);
     }
 
-    function saveApiKeys() {
-      const keys = document.getElementById('apiKeyInput').value.trim();
-      localStorage.setItem('apiKeys', keys);
-      alert('บันทึก API Keys เรียบร้อยแล้ว');
-    }
-
-    function exportApiKeys() {
-      const keys = document.getElementById('apiKeyInput').value.trim();
-      const blob = new Blob([keys], { type: 'text/plain' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'apikeys.txt';
-      a.click();
-    }
-
-    function importApiKeys(event) {
-      const file = event.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = function(e) {
-        const content = e.target.result.trim();
-        document.getElementById('apiKeyInput').value = content;
-        saveApiKeys();
-      };
-      reader.readAsText(file);
-    }
-
-    window.onload = () => {
-      const saved = localStorage.getItem('apiKeys');
-      if (saved) document.getElementById('apiKeyInput').value = saved;
-    };
-
     const tag = document.createElement('script');
     tag.src = "https://www.youtube.com/iframe_api";
     document.body.appendChild(tag);
+
+    document.getElementById('search').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        searchKaraoke();
+      }
+    });
   </script>
 </body>
 </html>
