@@ -30,7 +30,7 @@
       <input id="search" placeholder="ค้นหาเพลงคาราโอเกะ" />
       <button onclick="searchKaraoke()">ค้นหา</button>
       <div id="results"></div>
-      <div id="player"></div>
+      <div id="player"><div id="ytplayer"></div></div>
       <div class="countdown" id="countdown"></div>
       <button onclick="skipSong()">ข้ามเพลง</button>
       <button onclick="restartQueue()">เล่นใหม่</button>
@@ -58,6 +58,7 @@
     let nowPlayingIndex = -1;
     let player;
     let ytPlayerReady = false;
+    let isPlayingNext = false;
 
     function searchKaraoke() {
       const apiKeys = [
@@ -102,7 +103,7 @@
       if (!queue.find(q => q.videoId === videoId)) {
         queue.push({ title, videoId });
         updateQueueDisplay();
-        if (queue.length === 1) playNext();
+        if (queue.length === 1 && ytPlayerReady) playNext();
       }
     }
 
@@ -120,12 +121,13 @@
         .then(res => res.json())
         .then(data => {
           const title = data.items?.[0]?.snippet?.title || `YouTube Video: ${videoId}`;
-      if (!queue.find(q => q.videoId === videoId)) {
-        queue.push({ title, videoId });
-        updateQueueDisplay();
-        if (queue.length === 1) playNext();
-      }
-      document.getElementById('manualUrl').value = ''; });
+          if (!queue.find(q => q.videoId === videoId)) {
+            queue.push({ title, videoId });
+            updateQueueDisplay();
+            if (queue.length === 1 && ytPlayerReady) playNext();
+          }
+          document.getElementById('manualUrl').value = '';
+        });
     }
 
     function updateQueueDisplay() {
@@ -155,6 +157,7 @@
     }
 
     function playNext() {
+      if (queue.length === 0) return;
       if (currentIndex >= queue.length) {
         if (document.getElementById('loopQueue').checked) {
           currentIndex = 0;
@@ -167,13 +170,19 @@
     }
 
     function playSongAt(index) {
+      if (!ytPlayerReady) {
+        console.warn("YouTube API ยังไม่พร้อม");
+        return;
+      }
+
       nowPlayingIndex = index;
       currentIndex = index + 1;
       updateQueueDisplay();
       const videoId = queue[index].videoId;
-      const playerDiv = document.getElementById('player');
-      playerDiv.innerHTML = '<div id="ytplayer"></div>';
-      if (window.YT && YT.Player) {
+
+      if (player) {
+        player.loadVideoById(videoId);
+      } else {
         player = new YT.Player('ytplayer', {
           height: '360',
           width: '100%',
@@ -189,13 +198,13 @@
       }
     }
 
-    function onYouTubeIframeAPIReady() {
-      ytPlayerReady = true;
-    }
-
     function onPlayerStateChange(event) {
-      if (event.data === YT.PlayerState.ENDED) {
-        playNext();
+      if (event.data === YT.PlayerState.ENDED && !isPlayingNext) {
+        isPlayingNext = true;
+        setTimeout(() => {
+          playNext();
+          isPlayingNext = false;
+        }, 500);
       }
     }
 
@@ -247,7 +256,7 @@
         });
         currentIndex = 0;
         updateQueueDisplay();
-        playNext();
+        if (ytPlayerReady) playNext();
       };
       reader.readAsText(file);
     }
@@ -255,6 +264,11 @@
     const tag = document.createElement('script');
     tag.src = "https://www.youtube.com/iframe_api";
     document.body.appendChild(tag);
+
+    function onYouTubeIframeAPIReady() {
+      ytPlayerReady = true;
+      if (queue.length > 0) playNext();
+    }
 
     document.getElementById('search').addEventListener('keydown', function(e) {
       if (e.key === 'Enter') {
