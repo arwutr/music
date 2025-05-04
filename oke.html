@@ -1,7 +1,7 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="th">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8">
   <title>Karaoke BY ARM</title>
   <style>
     body { font-family: sans-serif; margin: 0; }
@@ -13,265 +13,238 @@
     .countdown { font-weight: bold; font-size: 1.2em; margin: 10px 0; color: darkred; }
     .playable-title { cursor: pointer; color: blue; text-decoration: underline; }
     .now-playing { background-color: #ffeeba; padding: 2px 6px; border-radius: 4px; }
+    @media screen and (max-width: 768px), screen and (fullscreen) {
+      #sidebar { display: none; }
+    }
     #manual-add, #apiKeyManager { margin-top: 30px; padding-top: 15px; border-top: 1px solid #ccc; }
-    @media screen and (max-width: 768px) { #sidebar { display: none; } }
+    #apiKeyManager { display: none; }
   </style>
 </head>
 <body>
-  <div id="container">
-    <div id="main">
-      <h1>Karaoke BY ARM</h1>
-      <input id="search" placeholder="ค้นหาเพลงคาราโอเกะ" />
-      <button onclick="searchKaraoke()">ค้นหา</button>
-      <div id="results"></div>
-      <div id="player"></div>
-      <div class="countdown" id="countdown"></div>
-      <button onclick="playNext()">เพลงถัดไป</button>
-      <button onclick="restartQueue()">เล่นใหม่</button>
-      <label><input type="checkbox" id="loopQueue"> วนลูปคิว</label><br><br>
-
-      <button onclick="exportQueue()">📤 ส่งออกคิว</button>
-      <input type="file" id="queueFile" accept=".csv" onchange="importQueue(event)" /><br><br>
-
-      <div id="manual-add">
-        <h3>เพิ่มลิงก์ YouTube โดยตรง</h3>
-        <input id="manualUrl" style="width:60%;" placeholder="วางลิงก์ YouTube ที่นี่" />
-        <button onclick="addLinkToQueue()">เพิ่มเข้าคิว</button>
-      </div>
-
-      <div style="margin-top:20px;">
-        <button onclick="unlockManager()">🔒 ปลดล็อกรหัส</button>
-        <input type="password" id="unlockCode" placeholder="กรอกรหัสเพื่อเข้าถึง API Key">
-      </div>
-
-      <div id="apiKeyManager" style="display:none;">
-        <h3>จัดการ API Key</h3>
-        <textarea id="apiKeyInput" rows="5" style="width:100%;"></textarea><br>
-        <button onclick="saveApiKeys()">💾 บันทึก</button>
-        <button onclick="exportApiKeys()">📤 ส่งออก</button>
-        <input type="file" accept=".txt" onchange="importApiKeys(event)">
-      </div>
+<div id="container">
+  <div id="main">
+    <h1>Karaoke BY ARM</h1>
+    <input id="search" placeholder="ค้นหาเพลงคาราโอเกะ" />
+    <button onclick="searchKaraoke()">ค้นหา</button>
+    <div id="results"></div>
+    <div id="player"></div>
+    <div class="countdown" id="countdown"></div>
+    <button onclick="skipSong()">เพลงถัดไป</button>
+    <button onclick="restartQueue()">เล่นใหม่</button>
+    <label><input type="checkbox" id="loopQueue"> วนลูปคิว</label>
+    <br><br>
+    <button onclick="exportQueue()">📤 ส่งออกคิว karaoke.csv</button>
+    <input type="file" accept=".csv" onchange="importQueue(event)">
+    <div id="manual-add">
+      <h3>เพิ่มลิงก์ YouTube โดยตรง</h3>
+      <input id="manualUrl" placeholder="วางลิงก์ YouTube ที่นี่" style="width: 60%;">
+      <button onclick="addLinkToQueue()">เพิ่มเข้าคิว</button>
     </div>
-
-    <div id="sidebar">
-      <h2>คิวเพลง</h2>
-      <ol id="queue"></ol>
+    <div>
+      <button onclick="unlockManager()">🔒 ปลดล็อก API</button>
+      <input type="password" id="unlockCode" placeholder="รหัส = nimda">
+    </div>
+    <div id="apiKeyManager">
+      <h3>จัดการ API Key</h3>
+      <textarea id="apiKeyInput" rows="5" style="width:100%"></textarea><br>
+      <button onclick="saveApiKeys()">💾 บันทึก API Key</button>
+      <button onclick="exportApiKeys()">📤 ส่งออก API Key</button>
+      <input type="file" accept=".txt" onchange="importApiKeys(event)">
     </div>
   </div>
+  <div id="sidebar">
+    <h2>คิวเพลง</h2>
+    <ol id="queue"></ol>
+  </div>
+</div>
+<footer style="text-align:center;padding:20px;background:#f2f2f2;">
+  ติดต่อผู้ดูแลระบบที่ LINE ID : armtrue หรือ เบอร์โทรศัพท์ : 0864910528
+</footer>
+<script>
+let queue = JSON.parse(localStorage.getItem('karaokeQueue') || '[]');
+let currentIndex = 0, nowPlayingIndex = -1, player, ytPlayerReady = false, countdownInterval;
+let apiKeys = JSON.parse(localStorage.getItem('apiKeys') || '["AIzaSyB5ho_NRgYf8yZZgBGqP6LrEB4N2NsV85g"]');
 
-  <footer style="text-align:center; padding:20px; background:#f2f2f2;">
-    ติดต่อผู้ดูแลระบบที่ LINE ID : armtrue หรือ เบอร์โทรศัพท์ : 0864910528
-  </footer>
+document.getElementById('search').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') searchKaraoke();
+});
 
-  <script>
-    let queue = JSON.parse(localStorage.getItem('karaokeQueue') || '[]');
-    let currentIndex = 0;
-    let nowPlayingIndex = -1;
-    let ytPlayerReady = false;
-    let player, countdownInterval;
+function unlockManager() {
+  if (document.getElementById('unlockCode').value === 'nimda') {
+    document.getElementById('apiKeyManager').style.display = 'block';
+    document.getElementById('apiKeyInput').value = apiKeys.join("\n");
+  }
+}
+function saveApiKeys() {
+  const keys = document.getElementById('apiKeyInput').value.trim().split(/\r?\n/);
+  apiKeys = keys;
+  localStorage.setItem('apiKeys', JSON.stringify(keys));
+}
+function exportApiKeys() {
+  const blob = new Blob([apiKeys.join("\n")], { type: "text/plain" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "api_keys.txt";
+  a.click();
+}
+function importApiKeys(event) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const keys = reader.result.trim().split(/\r?\n/);
+    apiKeys = keys;
+    localStorage.setItem('apiKeys', JSON.stringify(keys));
+    document.getElementById('apiKeyInput').value = keys.join("\n");
+  };
+  reader.readAsText(event.target.files[0]);
+}
 
-    let apiKeys = [];
-    try {
-      const stored = localStorage.getItem('apiKeys');
-      apiKeys = stored ? JSON.parse(stored) : [];
-    } catch { apiKeys = []; }
+// auto load apikeys.txt if exists
+fetch("apikeys.txt").then(res => res.ok ? res.text() : '').then(text => {
+  if (text) {
+    const keys = text.trim().split(/\r?\n/);
+    apiKeys = keys;
+    localStorage.setItem('apiKeys', JSON.stringify(keys));
+  }
+});
 
-    if (apiKeys.length === 0) {
-      fetch('apikeys.txt')
-        .then(res => res.ok ? res.text() : '')
-        .then(text => {
-          const keys = text.trim().split(/\r?\n/).filter(line => line);
-          if (keys.length > 0) {
-            apiKeys = keys;
-            localStorage.setItem('apiKeys', JSON.stringify(apiKeys));
-          }
-        });
-    }
-
-    function unlockManager() {
-      const code = document.getElementById('unlockCode').value;
-      if (code === 'nimda') {
-        document.getElementById('apiKeyManager').style.display = 'block';
-        document.getElementById('apiKeyInput').value = apiKeys.join('\n');
-      } else alert("รหัสไม่ถูกต้อง");
-    }
-
-    function saveApiKeys() {
-      const lines = document.getElementById('apiKeyInput').value.trim().split(/\r?\n/);
-      localStorage.setItem('apiKeys', JSON.stringify(lines));
-      apiKeys = lines;
-      alert("บันทึก API Key แล้ว");
-    }
-
-    function exportApiKeys() {
-      const blob = new Blob([apiKeys.join('\n')], { type: 'text/plain' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = 'apikeys.txt';
-      a.click();
-    }
-
-    function importApiKeys(e) {
-      const file = e.target.files[0];
-      const reader = new FileReader();
-      reader.onload = () => {
-        const lines = reader.result.trim().split(/\r?\n/);
-        apiKeys = lines;
-        localStorage.setItem('apiKeys', JSON.stringify(apiKeys));
-        document.getElementById('apiKeyInput').value = lines.join('\n');
-        alert("นำเข้า API Key แล้ว");
-      };
-      reader.readAsText(file);
-    }
-
-    function searchKaraoke() {
-      const query = document.getElementById('search').value + ' คาราโอเกะ';
-      let keyIndex = 0;
-      function trySearch() {
-        const key = apiKeys[keyIndex];
-        fetch("https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=3&q=" + encodeURIComponent(query) + "&key=" + key)
-          .then(res => {
-            if (!res.ok && ++keyIndex < apiKeys.length) trySearch();
-            else return res.json();
-          })
-          .then(data => {
-            const results = document.getElementById('results');
-            results.innerHTML = '';
-            data?.items?.forEach(item => {
-              const btn = document.createElement('button');
-              btn.textContent = item.snippet.title;
-              btn.onclick = () => addToQueue(item.id.videoId, item.snippet.title);
-              results.appendChild(btn);
-            });
-          });
-      }
-      trySearch();
-    }
-
-    function addToQueue(videoId, title) {
-      if (!queue.find(q => q.videoId === videoId)) {
-        queue.push({ videoId, title });
-        localStorage.setItem('karaokeQueue', JSON.stringify(queue));
-        updateQueueDisplay();
-        if (queue.length === 1) playNext();
-      }
-    }
-
-    function addLinkToQueue() {
-      const url = document.getElementById('manualUrl').value.trim();
-      const match = url.match(/(?:v=|\.be\/)([\w-]{11})/);
-      if (!match) return alert("ลิงก์ไม่ถูกต้อง");
-      const videoId = match[1];
-      let i = 0;
-      function tryGetTitle() {
-        fetch("https://www.googleapis.com/youtube/v3/videos?part=snippet&id=" + videoId + "&key=" + apiKeys[i])
-          .then(res => res.ok ? res.json() : (++i < apiKeys.length && tryGetTitle()))
-          .then(data => {
-            const title = data?.items?.[0]?.snippet?.title || `YouTube Video: ${videoId}`;
-            addToQueue(videoId, title);
-            document.getElementById('manualUrl').value = '';
-          });
-      }
-      tryGetTitle();
-    }
-
-    function updateQueueDisplay() {
-      const list = document.getElementById('queue');
-      list.innerHTML = '';
-      queue.forEach((song, i) => {
-        const li = document.createElement('li');
-        const span = document.createElement('span');
-        span.textContent = song.title;
-        span.className = 'playable-title';
-        if (i === nowPlayingIndex) span.classList.add('now-playing');
-        span.onclick = () => playSongAt(i);
-        li.appendChild(span);
-        list.appendChild(li);
+function searchKaraoke() {
+  const query = document.getElementById('search').value + " คาราโอเกะ";
+  let i = 0;
+  function tryFetch() {
+    fetch("https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=3&q=" + encodeURIComponent(query) + "&key=" + apiKeys[i])
+    .then(res => res.ok ? res.json() : Promise.reject()).then(data => {
+      const results = document.getElementById('results');
+      results.innerHTML = '';
+      data.items.forEach(item => {
+        const btn = document.createElement('button');
+        btn.textContent = item.snippet.title;
+        btn.onclick = () => addToQueue(item.id.videoId, item.snippet.title);
+        results.appendChild(btn);
       });
-    }
-
-    function playSongAt(i) {
-      nowPlayingIndex = currentIndex = i;
-      const song = queue[i];
-      const div = document.getElementById('player');
-      div.innerHTML = '<div id="ytplayer"></div>';
-      if (window.YT?.Player) {
-        player = new YT.Player('ytplayer', {
-          height: '360',
-          width: '100%',
-          videoId: song.videoId,
-          events: {
-            'onReady': e => { e.target.playVideo(); updateRealCountdown(); },
-            'onStateChange': onPlayerStateChange
-          }
-        });
-      }
+    }).catch(() => { if (++i < apiKeys.length) tryFetch(); });
+  }
+  tryFetch();
+}
+function addToQueue(videoId, title) {
+  if (!queue.find(q => q.videoId === videoId)) {
+    queue.push({ title, videoId });
+    updateQueueDisplay();
+    localStorage.setItem('karaokeQueue', JSON.stringify(queue));
+    if (queue.length === 1 && ytPlayerReady) playSongAt(0);
+  }
+}
+function addLinkToQueue() {
+  const url = document.getElementById('manualUrl').value.trim();
+  const match = url.match(/(?:youtube\.com.*[?&]v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+  if (!match) return alert("ลิงก์ไม่ถูกต้อง");
+  const videoId = match[1];
+  if (queue.find(q => q.videoId === videoId)) return;
+  fetch("https://www.googleapis.com/youtube/v3/videos?part=snippet&id=" + videoId + "&key=" + apiKeys[0])
+    .then(res => res.json())
+    .then(data => {
+      const title = data.items?.[0]?.snippet?.title || "YouTube Video: " + videoId;
+      addToQueue(videoId, title);
+      document.getElementById('manualUrl').value = '';
+    });
+}
+function updateQueueDisplay() {
+  const list = document.getElementById('queue');
+  list.innerHTML = '';
+  queue.forEach((song, i) => {
+    const li = document.createElement('li');
+    const span = document.createElement('span');
+    span.textContent = song.title;
+    span.className = 'playable-title';
+    if (i === nowPlayingIndex) span.classList.add('now-playing');
+    span.onclick = () => playSongAt(i);
+    const btn = document.createElement('button');
+    btn.textContent = 'ลบ';
+    btn.onclick = () => {
+      queue.splice(i, 1);
       updateQueueDisplay();
-    }
-
-    function onPlayerStateChange(e) {
-      if (e.data === YT.PlayerState.ENDED) playNext();
-    }
-
-    function playNext() {
-      if (++currentIndex >= queue.length) {
-        if (document.getElementById('loopQueue').checked) currentIndex = 0;
-        else return;
+      localStorage.setItem('karaokeQueue', JSON.stringify(queue));
+    };
+    li.appendChild(span);
+    li.appendChild(document.createTextNode(' '));
+    li.appendChild(btn);
+    list.appendChild(li);
+  });
+}
+function playSongAt(index) {
+  nowPlayingIndex = index;
+  currentIndex = index + 1;
+  updateQueueDisplay();
+  const id = queue[index].videoId;
+  document.getElementById('player').innerHTML = '<div id="ytplayer"></div>';
+  if (YT && YT.Player) {
+    player = new YT.Player("ytplayer", {
+      height: "360", width: "100%", videoId: id,
+      events: {
+        onReady: e => { e.target.playVideo(); updateRealCountdown(); },
+        onStateChange: onPlayerStateChange
       }
-      playSongAt(currentIndex);
+    });
+  }
+}
+function playNext() {
+  if (queue.length === 0) return;
+  if (currentIndex >= queue.length) {
+    if (document.getElementById('loopQueue').checked) currentIndex = 0;
+    else return;
+  }
+  playSongAt(currentIndex++);
+}
+function onPlayerStateChange(e) {
+  if (e.data === YT.PlayerState.ENDED) playNext();
+}
+function skipSong() {
+  if (player && player.stopVideo) player.stopVideo();
+  playNext();
+}
+function restartQueue() {
+  currentIndex = 0;
+  playNext();
+}
+function updateRealCountdown() {
+  clearInterval(countdownInterval);
+  countdownInterval = setInterval(() => {
+    if (player && typeof player.getDuration === 'function') {
+      const remaining = Math.max(0, Math.round(player.getDuration() - player.getCurrentTime()));
+      document.getElementById('countdown').textContent = 'เหลือเวลา: ' + remaining + ' วินาที';
     }
+  }, 1000);
+}
+function exportQueue() {
+  const csv = queue.map(q => q.title + "," + q.videoId).join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "karaoke.csv";
+  a.click();
+}
+function importQueue(e) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    queue = [];
+    reader.result.trim().split("\n").forEach(line => {
+      const [title, videoId] = line.split(',');
+      if (title && videoId) queue.push({ title, videoId });
+    });
+    localStorage.setItem('karaokeQueue', JSON.stringify(queue));
+    updateQueueDisplay();
+    if (ytPlayerReady) playSongAt(0);
+  };
+  reader.readAsText(e.target.files[0]);
+}
 
-    function restartQueue() {
-      currentIndex = 0;
-      playNext();
-    }
-
-    function updateRealCountdown() {
-      clearInterval(countdownInterval);
-      countdownInterval = setInterval(() => {
-        if (player?.getDuration && player?.getCurrentTime) {
-          const d = player.getDuration(), c = player.getCurrentTime();
-          document.getElementById('countdown').textContent = `เหลือเวลา: ${Math.max(0, Math.round(d - c))} วินาที`;
-        }
-      }, 1000);
-    }
-
-    function exportQueue() {
-      const csv = queue.map(q => q.title + ',' + q.videoId).join('\n');
-      const blob = new Blob([csv], { type: 'text/csv' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = 'karaoke.csv';
-      a.click();
-    }
-
-    function importQueue(e) {
-      const file = e.target.files[0];
-      const reader = new FileReader();
-      reader.onload = () => {
-        const lines = reader.result.trim().split('\n');
-        queue = lines.map(line => {
-          const [title, videoId] = line.split(',');
-          return { title, videoId };
-        });
-        currentIndex = 0;
-        localStorage.setItem('karaokeQueue', JSON.stringify(queue));
-        updateQueueDisplay();
-        playNext();
-      };
-      reader.readAsText(file);
-    }
-
-    const tag = document.createElement('script');
-    tag.src = "https://www.youtube.com/iframe_api";
-    document.body.appendChild(tag);
-
-    function onYouTubeIframeAPIReady() {
-      ytPlayerReady = true;
-      if (queue.length > 0) playSongAt(0);
-    }
-
-    window.onload = () => updateQueueDisplay();
-  </script>
+const tag = document.createElement('script');
+tag.src = "https://www.youtube.com/iframe_api";
+document.body.appendChild(tag);
+function onYouTubeIframeAPIReady() {
+  ytPlayerReady = true;
+  updateQueueDisplay();
+  if (queue.length) playSongAt(0);
+}
+</script>
 </body>
 </html>
