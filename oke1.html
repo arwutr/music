@@ -1,0 +1,300 @@
+<!-- แนะนำให้เซฟเป็น index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Karaoke BY ARM</title>
+  <style>
+    body { font-family: sans-serif; margin: 0; }
+    #container { display: flex; flex-direction: row; }
+    #main { flex: 1; padding: 20px; }
+    #sidebar { width: 300px; padding: 20px; border-left: 1px solid #ccc; overflow-y: auto; max-height: 100vh; }
+    #results button { display: block; margin: 10px 0; }
+    .countdown { font-weight: bold; font-size: 1.2em; margin: 10px 0; color: darkred; }
+    .playable-title { cursor: pointer; color: blue; text-decoration: underline; }
+    .now-playing { background-color: #ffeeba; padding: 2px 6px; border-radius: 4px; }
+    #manual-add, #apiKeyManager { margin-top: 20px; border-top: 1px solid #ccc; padding-top: 10px; }
+    @media screen and (max-width: 768px) { #sidebar { display: none; } }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <div id="main">
+      <h1>Karaoke BY ARM</h1>
+      <input id="search" placeholder="ค้นหาเพลงคาราโอเกะ" />
+      <button onclick="searchKaraoke()">ค้นหา</button>
+      <div id="results"></div>
+      <div id="player"></div>
+      <div class="countdown" id="countdown"></div>
+      <button onclick="skipSong()">เพลงถัดไป</button>
+      <button onclick="restartQueue()">เล่นใหม่</button>
+      <label><input type="checkbox" id="loopQueue"> วนลูปคิว</label><br><br>
+      <button onclick="exportQueue()">ส่งออกคิว</button>
+      <input type="file" accept=".csv" id="queueFile" onchange="importQueue(event)" />
+
+      <div id="manual-add">
+        <h3>เพิ่มลิงก์ YouTube โดยตรง</h3>
+        <input id="manualUrl" placeholder="ลิงก์ YouTube" style="width: 60%;">
+        <button onclick="addLinkToQueue()">เพิ่มเข้าคิว</button>
+      </div>
+
+      <div>
+        <h3>จัดการ API Key 🔐</h3>
+        <input type="password" id="unlockCode" placeholder="รหัสปลดล็อก">
+        <button onclick="unlockManager()">ปลดล็อก</button>
+        <div id="apiKeyManager" style="display:none">
+          <textarea id="apiKeyInput" rows="5" style="width:100%;"></textarea><br>
+          <button onclick="saveApiKeys()">บันทึก</button>
+          <button onclick="exportApiKeys()">ส่งออก API Key</button>
+          <input type="file" accept=".txt" onchange="importApiKeys(event)">
+        </div>
+      </div>
+    </div>
+    <div id="sidebar">
+      <h2>คิวเพลง</h2>
+      <ol id="queue"></ol>
+    </div>
+  </div>
+
+  <footer style="text-align:center;padding:10px;background:#f2f2f2;">ติดต่อผู้ดูแลระบบที่ LINE ID : armtrue หรือ เบอร์โทรศัพท์ : 0864910528</footer>
+
+  <script>
+    let queue = JSON.parse(localStorage.getItem('karaokeQueue') || '[]');
+    let currentIndex = 0;
+    let nowPlayingIndex = -1;
+    let player, countdownInterval, ytPlayerReady = false;
+
+    let apiKeys;
+    try {
+      apiKeys = JSON.parse(localStorage.getItem('apiKeys')) || ["AIzaSyB5ho_NRgYf8yZZgBGqP6LrEB4N2NsV85g"];
+    } catch {
+      apiKeys = ["AIzaSyB5ho_NRgYf8yZZgBGqP6LrEB4N2NsV85g"];
+    }
+
+    function updateQueueDisplay() {
+      const list = document.getElementById('queue');
+      list.innerHTML = '';
+      queue.forEach((song, i) => {
+        const li = document.createElement('li');
+        const span = document.createElement('span');
+        span.textContent = song.title;
+        span.className = 'playable-title';
+        if (i === nowPlayingIndex) span.classList.add('now-playing');
+        span.onclick = () => playSongAt(i);
+        const remove = document.createElement('button');
+        remove.textContent = 'ลบ';
+        remove.onclick = () => { queue.splice(i, 1); updateQueueDisplay(); saveQueue(); };
+        li.appendChild(span);
+        li.appendChild(document.createTextNode(' '));
+        li.appendChild(remove);
+        list.appendChild(li);
+      });
+    }
+
+    function playSongAt(index) {
+      if (!queue[index]) return;
+      nowPlayingIndex = index;
+      currentIndex = index + 1;
+      updateQueueDisplay();
+      const videoId = queue[index].videoId;
+      const div = document.getElementById('player');
+      div.innerHTML = '<div id="ytplayer"></div>';
+      if (window.YT && YT.Player) {
+        player = new YT.Player('ytplayer', {
+          videoId,
+          width: "100%", height: "360",
+          events: {
+            onReady: e => { e.target.playVideo(); updateCountdown(); },
+            onStateChange: e => {
+              if (e.data === YT.PlayerState.ENDED) {
+                setTimeout(playNext, 500);
+              }
+            }
+          }
+        });
+      }
+    }
+
+    function playNext() {
+      if (currentIndex >= queue.length) {
+        if (document.getElementById('loopQueue').checked) currentIndex = 0;
+        else return;
+      }
+      playSongAt(currentIndex++);
+    }
+
+    function restartQueue() {
+      currentIndex = 0;
+      playNext();
+    }
+
+    function skipSong() {
+      if (player?.stopVideo) player.stopVideo();
+      playNext();
+    }
+
+    function addToQueue(item) {
+      const videoId = item.id.videoId;
+      const title = item.snippet.title;
+      if (!queue.find(q => q.videoId === videoId)) {
+        queue.push({ title, videoId });
+        updateQueueDisplay();
+        saveQueue();
+        if (queue.length === 1 && ytPlayerReady) playNext();
+      }
+    }
+
+    function addLinkToQueue() {
+      const url = document.getElementById('manualUrl').value.trim();
+      const match = url.match(/(?:v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+      if (!match) return alert("ลิงก์ไม่ถูกต้อง");
+      const videoId = match[1];
+      if (queue.find(q => q.videoId === videoId)) return;
+      let keyIndex = 0;
+      function tryFetch() {
+        fetch(`https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${videoId}&key=${apiKeys[keyIndex]}`)
+          .then(res => res.ok ? res.json() : (keyIndex++, keyIndex < apiKeys.length ? tryFetch() : Promise.reject()))
+          .then(data => {
+            const title = data.items?.[0]?.snippet?.title || `YouTube Video: ${videoId}`;
+            queue.push({ title, videoId });
+            updateQueueDisplay();
+            saveQueue();
+            if (queue.length === 1 && ytPlayerReady) playNext();
+            document.getElementById('manualUrl').value = '';
+          }).catch(() => alert("ไม่สามารถดึงข้อมูลได้"));
+      }
+      tryFetch();
+    }
+
+    function searchKaraoke() {
+      const query = document.getElementById('search').value + ' คาราโอเกะ';
+      let keyIndex = 0;
+      function trySearch() {
+        fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=3&q=${encodeURIComponent(query)}&key=${apiKeys[keyIndex]}`)
+          .then(res => res.ok ? res.json() : (keyIndex++, keyIndex < apiKeys.length ? trySearch() : Promise.reject()))
+          .then(data => {
+            const results = document.getElementById('results');
+            results.innerHTML = '';
+            data.items.forEach(item => {
+              const btn = document.createElement('button');
+              btn.textContent = item.snippet.title;
+              btn.onclick = () => addToQueue(item);
+              results.appendChild(btn);
+            });
+          }).catch(() => alert("ค้นหาไม่สำเร็จ"));
+      }
+      trySearch();
+    }
+
+    function updateCountdown() {
+      clearInterval(countdownInterval);
+      countdownInterval = setInterval(() => {
+        if (player?.getDuration && player.getCurrentTime) {
+          const remaining = Math.round(player.getDuration() - player.getCurrentTime());
+          document.getElementById('countdown').textContent = `เหลือเวลา: ${remaining} วินาที`;
+        }
+      }, 1000);
+    }
+
+    function exportQueue() {
+      const csv = queue.map(q => `${q.title},${q.videoId}`).join("\n");
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'karaoke.csv';
+      a.click();
+    }
+
+    function importQueue(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const lines = reader.result.trim().split('\n');
+        queue = lines.map(line => {
+          const [title, videoId] = line.split(',');
+          return { title, videoId };
+        });
+        updateQueueDisplay();
+        saveQueue();
+        playNext();
+      };
+      reader.readAsText(file);
+    }
+
+    function unlockManager() {
+      if (document.getElementById('unlockCode').value === 'nimda') {
+        document.getElementById('apiKeyManager').style.display = 'block';
+        document.getElementById('apiKeyInput').value = apiKeys.join("\n");
+      } else {
+        alert("รหัสไม่ถูกต้อง");
+      }
+    }
+
+    function saveApiKeys() {
+      const keys = document.getElementById('apiKeyInput').value.trim().split(/\r?\n/);
+      localStorage.setItem('apiKeys', JSON.stringify(keys));
+      apiKeys = keys;
+      alert("บันทึกเรียบร้อยแล้ว");
+    }
+
+    function exportApiKeys() {
+      const blob = new Blob([apiKeys.join('\n')], { type: 'text/plain' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = "api_keys.txt";
+      a.click();
+    }
+
+    function importApiKeys(event) {
+      const file = event.target.files[0];
+      const reader = new FileReader();
+      reader.onload = () => {
+        const keys = reader.result.trim().split(/\r?\n/);
+        apiKeys = keys;
+        localStorage.setItem('apiKeys', JSON.stringify(keys));
+        document.getElementById('apiKeyInput').value = keys.join("\n");
+        alert("นำเข้า API Key เรียบร้อยแล้ว");
+      };
+      reader.readAsText(file);
+    }
+
+    function saveQueue() {
+      localStorage.setItem('karaokeQueue', JSON.stringify(queue));
+    }
+
+    // โหลด YouTube IFrame API
+    const tag = document.createElement('script');
+    tag.src = "https://www.youtube.com/iframe_api";
+    document.body.appendChild(tag);
+    function onYouTubeIframeAPIReady() { ytPlayerReady = true; if (queue.length > 0) playNext(); }
+
+    // ENTER เพื่อค้นหา
+    document.getElementById('search').addEventListener('keydown', e => {
+      if (e.key === 'Enter') searchKaraoke();
+    });
+
+    // โหลด queue เริ่มต้นจากไฟล์ karaoke.csv ถ้ามี
+    window.onload = () => {
+      if (queue.length === 0) {
+        fetch('karaoke.csv')
+          .then(res => res.ok ? res.text() : '')
+          .then(text => {
+            if (text) {
+              queue = text.trim().split('\n').map(line => {
+                const [title, videoId] = line.split(',');
+                return { title, videoId };
+              });
+              updateQueueDisplay();
+              saveQueue();
+              playNext();
+            }
+          });
+      } else {
+        updateQueueDisplay();
+        playNext();
+      }
+    };
+  </script>
+</body>
+</html>
